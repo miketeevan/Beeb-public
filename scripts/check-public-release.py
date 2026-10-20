@@ -10,6 +10,8 @@ EXCLUDED = {'.git', 'build', 'dist', '__pycache__', '.venv-setup', '.venv'}
 SUFFIXES = {'.swift', '.plist', '.entitlements', '.pbxproj', '.xcscheme',
             '.xcworkspacedata', '.png', '.md', '.txt', '.py', '.sh', '.command', '.json'}
 ROOT_NAMES = {'.gitignore', '.gitattributes'}
+# Reviewed product documentation is included alongside the source.
+REVIEWED_DOCUMENTS = {'docs/Beeb-build-15-changes-A3.pdf'}
 PATTERNS = {
     'local account path': re.compile(rb'/(?:Users|home)/[A-Za-z0-9_.-]+/'),
     'private key': re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----'),
@@ -43,7 +45,7 @@ def issues(root=ROOT):
         if 'xcuserdata' in relative.parts or path.name == '.DS_Store':
             found.append((label, 'private platform state'))
             continue
-        if path.suffix not in SUFFIXES and label not in ROOT_NAMES:
+        if path.suffix not in SUFFIXES and label not in ROOT_NAMES and label not in REVIEWED_DOCUMENTS:
             found.append((label, 'unexpected source file type'))
             continue
         data = path.read_bytes()

@@ -8,6 +8,8 @@ This fork of [usefulappmaker/Beeb-public](https://github.com/usefulappmaker/Beeb
 
 ## Changes in this fork
 
+[Download the A3 change guide with screenshots](docs/Beeb-build-15-changes-A3.pdf).
+
 - Reorderable favourite channels above New & Trending, with muted live previews.
 - Full-screen Live schedule with date controls, past programmes and catch-up where available, plus a channel preview.
 - Live playback: press Down to show controls, Down again to enter channel switching, then Right for the next channel or Left for the previous channel. Up returns to playback controls. Channel order follows the guide, with favourites first and wrapping at the ends.
