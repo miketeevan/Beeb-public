@@ -167,7 +167,9 @@ struct DiscoveryAPI {
     func liveSource(_ channel: LiveChannel) async throws -> PlaybackSource {
         guard channel.id.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil else { throw BBCError.message("Invalid channel.") }
         var last: Error?
-        for set in ["iptv-all", "pc"] {
+        var bestSource: PlaybackSource?
+        var bestHeight = -1, bestBandwidth = -1
+        for set in ["iptv-uhd", "iptv-all", "pc"] {
             do {
                 let data = try await fetch(URL(string: "https://open.live.bbc.co.uk/mediaselector/6/select/version/2.0/mediaset/\(set)/vpid/\(channel.id)/format/xml")!)
                 let selector = MediaSelector(); let parser = XMLParser(data: data); parser.delegate = selector
@@ -175,12 +177,19 @@ struct DiscoveryAPI {
                 for url in selector.urls {
                     let manifest = String(decoding: try await fetch(url), as: UTF8.self)
                     if manifest.hasPrefix("#EXTM3U"), !BBCService.variants(manifest, base: url).isEmpty {
-                        return PlaybackSource(url: url, requested1080: false)
+                        // Keep alternate audio and subtitles in the master; compare all BBC feeds.
+                        if let best = BBCService.variants(manifest, base: url).first,
+                           best.height > bestHeight || (best.height == bestHeight && best.bandwidth > bestBandwidth) {
+                            bestHeight = best.height; bestBandwidth = best.bandwidth
+                            bestSource = PlaybackSource(url: url, requested1080: false, videoRange: best.videoRange)
+                        }
                     }
                 }
                 if let message = selector.error { throw BBCError.message(message) }
             } catch { if Task.isCancelled { throw CancellationError() }; last = error }
         }
+        try Task.checkCancellation()
+        if let bestSource { return bestSource }
         throw BBCError.message("This channel is unavailable or off air. \(last?.localizedDescription ?? "No compatible live HLS stream was returned.")")
     }
 }

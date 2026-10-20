@@ -70,6 +70,12 @@ final class LocalHLSServer: @unchecked Sendable {
             guard method == "GET" || method == "HEAD" else { self.send(connection, status: "405 Method Not Allowed", data: Data(), type: "text/plain"); return }
             if let body = playlists[key] {
                 self.send(connection, data: body, type: key.hasSuffix(".vtt") ? "text/vtt; charset=utf-8" : "application/vnd.apple.mpegurl", head: method == "HEAD", range: range)
+            } else if let local = media[key], local.isFileURL {
+                do {
+                    let body = try Data(contentsOf: local, options: .mappedIfSafe)
+                    let type = key.hasSuffix(".m3u8") ? "application/vnd.apple.mpegurl" : key.hasSuffix(".vtt") ? "text/vtt" : key.hasSuffix(".ts") ? "video/mp2t" : "video/mp4"
+                    self.send(connection, data: body, type: type, head: method == "HEAD", range: range)
+                } catch { self.send(connection, status: "404 Not Found", data: Data(), type: "text/plain") }
             } else if let remote = media[key], remote.scheme == "https" {
                 let id = ObjectIdentifier(connection)
                 let task = self.session.dataTask(with: remote) { data, response, error in

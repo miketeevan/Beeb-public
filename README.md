@@ -2,7 +2,24 @@
   <img src="BeebHD/Assets.xcassets/BeebMark.imageset/mark.png" alt="Beeb app logo" width="96">
 </p>
 
-# Beeb
+# Beeb — custom TV edition
+
+This fork of [usefulappmaker/Beeb-public](https://github.com/usefulappmaker/Beeb-public) is based on **v0.8.2**. The `custom-tv` branch contains **custom build 15**. Upstream development remains on `main`.
+
+## Changes in this fork
+
+- Reorderable favourite channels above New & Trending, with muted live previews.
+- Full-screen Live schedule with date controls, past programmes and catch-up where available, plus a channel preview.
+- Live playback: press Down to show controls, Down again to enter channel switching, then Right for the next channel or Left for the previous channel. Up returns to playback controls. Channel order follows the guide, with favourites first and wrapping at the ends.
+- Best available live stream selection, including 4K when supplied.
+- Downloads of supported on-demand streams at the best available quality, including 4K when available. Downloads use local cache storage and may be removed by tvOS.
+- Home → Live → Browse tab order, and schedule-loading stability improvements.
+
+Build 15 was installed on Apple TV 4K. The channel remote sequence was also checked in the tvOS simulator on Mac. Source here has no personal signing team or provisioning profile; use your own Apple signing account. Existing download links below refer to upstream releases, which do not include these custom changes.
+
+---
+
+# Upstream Beeb documentation
 
 **An independent BBC player for Apple TV, with 4K HLG HDR and Apple's native playback controls.**
 
@@ -29,7 +46,7 @@ This is an unofficial project, not produced or endorsed by the BBC. Choose **sou
 | **Continue Watching and Up next** | Saves progress locally across launches. Resume an episode, start over, remove a show from the row or open the next episode after completion. |
 | **Programme discovery** | Featured programmes, categories, A–Z browsing, series selectors and ordered episode lists. Episode pages load when needed rather than indexing the whole catalogue at launch. |
 | **Saved programmes** | Bookmark a show and open its current available episodes later. |
-| **Live television** | BBC channel tiles show the scheduled programme's title and artwork. Live quality and subtitles depend on the supplied feed. |
+| **Live television** | Favourite channel cards show muted live previews. The Live schedule includes past, current and future programmes with catch-up where available. Live quality and subtitles depend on the supplied feed. |
 | **Artwork suited to each view** | Plain promotional images for homepage banners, individual episode stills for episode cards, and programme artwork for show listings. |
 
 ## Screenshots
@@ -156,7 +173,7 @@ BBC **TTML captions become segmented WebVTT** advertised as a real HLS subtitle 
 
 ## Limits and local data
 
-- No offline downloads or BBC account/history synchronisation.
+- Offline downloads are available for supported on-demand streams; BBC account/history synchronisation is unavailable.
 - Saved programmes and watch progress stay locally in the app.
 - UHD depends on the actual episode/version, compatible equipment and an accepted identity.
 - Dynamic, multi-period and protected DASH presentations are not supported by this bridge.

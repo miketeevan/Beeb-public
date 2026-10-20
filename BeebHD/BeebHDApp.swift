@@ -34,6 +34,7 @@ struct DetailView: View {
     @ObservedObject var library: Library
     @StateObject private var playback = PlaybackModel()
     @EnvironmentObject private var history: WatchHistory
+    @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.dismiss) private var dismiss
     private var details: Programme { state.fresh ?? programme }
     var body: some View {
@@ -55,6 +56,10 @@ struct DetailView: View {
             }
             Text(playback.status).font(.callout).foregroundStyle(.secondary)
             if let error = playback.error { Text(error).foregroundStyle(.orange).font(.callout) }
+            if let progress = downloads.active[programme.id] {
+                Text(progress.status + " • \(Int(progress.fraction * 100))%").font(.callout).foregroundStyle(.cyan)
+            }
+            if let error = downloads.errors[programme.id] { Text(error).font(.callout).foregroundStyle(.orange) }
             HStack(spacing: 24) {
                 Button {
                     playback.start(programme, history: history, show: show) { state.playing = true }
@@ -69,6 +74,14 @@ struct DetailView: View {
                 if playback.loading { Button("Cancel") { playback.stop() } }
                 if let show {
                     ProgrammeBookmarkButton(show: show, library: library)
+                }
+                if downloads.active[programme.id] != nil {
+                    Button("Cancel download") { downloads.cancel(programme.id) }
+                } else if downloads.contains(programme) {
+                    Label("Downloaded", systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(.cyan)
+                } else {
+                    Button { downloads.start(details) } label: { Image(systemName: "arrow.down.circle") }
+                        .accessibilityLabel("Download at the best available quality, preferring 4K")
                 }
                 Button("Close") { dismiss() }
             }.buttonStyle(OutlinedActionButtonStyle())

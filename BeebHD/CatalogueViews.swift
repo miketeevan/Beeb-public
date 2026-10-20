@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
-private enum BeebTab: String, CaseIterable { case home = "Home", browse = "Browse", live = "Live", saved = "Saved", settings = "Settings" }
+private enum BeebTab: String, CaseIterable { case home = "Home", live = "Live", browse = "Browse", saved = "Saved", downloads = "Downloads", settings = "Settings" }
 struct HomeView: View {
     @StateObject private var catalogue = CatalogueStore()
+    @StateObject private var channels = ChannelStore()
+    @StateObject private var downloads = DownloadStore()
     @StateObject private var library = Library()
     @StateObject private var history = WatchHistory()
     @State private var tab = BeebTab.home
@@ -21,13 +23,16 @@ struct HomeView: View {
                 switch tab {
                 case .home: DiscoveryHome(catalogue: catalogue, library: library)
                 case .browse: BrowseView(catalogue: catalogue, library: library)
-                case .live: LiveView()
+                case .live: LiveView(library: library).ignoresSafeArea(.container, edges: [.horizontal, .bottom])
+                case .downloads: DownloadsView()
                 case .saved: SavedProgrammes(catalogue: catalogue, library: library)
                 case .settings: SettingsView(catalogue: catalogue)
                 }
             }.id(tab)
-        }.environmentObject(history).tint(.pink).defaultFocus($focusedTab, .home)
+        }.ignoresSafeArea(.container, edges: tab == .live ? [.horizontal, .bottom] : [])
+        .environmentObject(history).environmentObject(channels).environmentObject(downloads).tint(.pink).defaultFocus($focusedTab, .home)
         .task { await catalogue.boot() }
+        .task { await channels.refreshChannels() }
         .onChange(of: phase) { _, value in if value == .active { Task { await catalogue.refreshHome() } } }
     }
 }
@@ -64,6 +69,7 @@ struct DiscoveryHome: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 34) {
+                FavouriteChannelsRow()
                 if let error = catalogue.error { Text(error).foregroundStyle(.orange).font(.callout) }
                 if catalogue.home == nil { ContinueWatchingRow(catalogue: catalogue, library: library) }
                 if let feed = catalogue.home {
@@ -335,54 +341,6 @@ struct SavedProgrammes: View {
         }.task { await library.migrate(); await library.refreshArtwork() }
     }
 }
-@MainActor final class LiveState: ObservableObject {
-    @Published var channels: [LiveChannel] = []
-    @Published var error: String?
-    @Published var retry = 0
-    @Published var playing = false
-}
-struct LiveView: View {
-    @Environment(\.scenePhase) private var phase
-    @StateObject private var state = LiveState()
-    @StateObject private var playback = PlaybackModel()
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 30) {
-                Text("Live channels").font(.largeTitle).bold()
-                Text("Watch now • quality adjusts to the live stream BBC supplies").foregroundStyle(.secondary)
-                if state.channels.isEmpty && state.error == nil { ProgressView("Getting channels…") }
-                if let error = state.error { Text(error).foregroundStyle(.orange); Button("Retry channels") { state.retry += 1 } }
-                if let error = playback.error { Text(error).foregroundStyle(.orange) }
-                if playback.loading { HStack { ProgressView("Connecting to live channel…"); Button("Cancel") { playback.stop() } } }
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 370))], spacing: 30) {
-                    ForEach(state.channels) { channel in
-                        Button { playback.startLive(channel) { state.playing = true } } label: {
-                            VStack(alignment: .leading, spacing: 12) {
-                                ProgrammeThumbnail(url: channel.current?.image, uhd: false)
-                                Text(channel.current?.title ?? channel.title).font(.headline).lineLimit(2)
-                                    .frame(maxWidth: .infinity, minHeight: 60, maxHeight: 60, alignment: .topLeading)
-                                Text(channel.title).font(.callout).foregroundStyle(.secondary)
-                            }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(ProgrammeCardStyle()).disabled(playback.loading)
-                    }
-                }
-            }.padding(60)
-        }.task(id: "\(state.retry)-\(phase)-\(state.playing)") {
-            guard phase == .active, !state.playing else { return }
-            state.error = nil
-            do {
-                let api = DiscoveryAPI()
-                if state.channels.isEmpty { state.channels = try await api.channels() }
-                while !Task.isCancelled {
-                    let channels = await api.nowPlaying(state.channels)
-                    try Task.checkCancellation(); state.channels = channels
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
-                }
-            } catch { if !Task.isCancelled { state.error = error.localizedDescription } }
-        }.fullScreenCover(isPresented: $state.playing, onDismiss: { playback.stop() }) { PlaybackScreen(model: playback) }
-        .onDisappear { if !state.playing { playback.stop() } }
-    }
-}
 struct SettingsView: View {
     @ObservedObject var catalogue: CatalogueStore
     var body: some View {
@@ -394,7 +352,7 @@ struct SettingsView: View {
                 Text("Programme listings load only when you select a category or letter. Series and episodes load when you open a programme. Saved programmes include all their series.")
                 if let warning = catalogue.storageWarning { Text(warning).foregroundStyle(.orange) }
                 UHDSetupView()
-                Text("Beeb 0.8.2 • Independent BBC player").font(.caption).foregroundStyle(.secondary)
+                Text("Beeb 0.8.2 • Custom build 15 • Independent BBC player").font(.caption).foregroundStyle(.secondary)
             }.padding(60)
         }
     }

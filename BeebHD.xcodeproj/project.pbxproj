@@ -42,6 +42,14 @@
 000000000000000000000190 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalogue.swift; sourceTree = "<group>"; };
 0000000000000000000001F4 = { isa = PBXBuildFile; fileRef = 000000000000000000000190; };
 
+AB0000000000000000000000 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelGuide.swift; sourceTree = "<group>"; };
+AC0000000000000000000000 = {isa = PBXBuildFile; fileRef = AB0000000000000000000000; };
+AB0000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflinePackage.swift; sourceTree = "<group>"; };
+AC0000000000000000000001 = {isa = PBXBuildFile; fileRef = AB0000000000000000000001; };
+AB0000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineDownloads.swift; sourceTree = "<group>"; };
+AC0000000000000000000002 = {isa = PBXBuildFile; fileRef = AB0000000000000000000002; };
+AB0000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelGuideViews.swift; sourceTree = "<group>"; };
+AC0000000000000000000003 = {isa = PBXBuildFile; fileRef = AB0000000000000000000003; };
 /* Begin PBXBuildFile section */
 		0000000000000000000000C8 /* BeebHDApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000000003E8 /* BeebHDApp.swift */; };
 		0000000000000000000000C9 /* BBCService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0000000000000000000003E9 /* BBCService.swift */; };
@@ -78,6 +86,10 @@
 			isa = PBXGroup;
 			children = (
                 000000000000000000000190,
+                AB0000000000000000000003,
+                AB0000000000000000000002,
+                AB0000000000000000000001,
+                AB0000000000000000000000,
                 000000000000000000000193,
                 000000000000000000000195,
                 000000000000000000000196,
@@ -173,6 +185,10 @@
 			buildActionMask = 2147483647;
 			files = (
                 0000000000000000000001F4,
+                AC0000000000000000000003,
+                AC0000000000000000000002,
+                AC0000000000000000000001,
+                AC0000000000000000000000,
                 0000000000000000000001F7,
                 0000000000000000000001F9,
                 0000000000000000000001FA,
@@ -230,7 +246,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
                 CODE_SIGN_ENTITLEMENTS = BeebHD/BeebHD.entitlements;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 15;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
@@ -262,7 +278,7 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
                 CODE_SIGN_ENTITLEMENTS = BeebHD/BeebHD.entitlements;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 15;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;

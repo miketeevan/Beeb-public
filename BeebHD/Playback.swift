@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 import AVKit
+import UIKit.UIGestureRecognizerSubclass
 
 @MainActor private struct PlaybackTracking {
     let history: WatchHistory
@@ -16,6 +17,8 @@ import AVKit
     @Published var error: String?
     @Published var qualityBadge: String?
     @Published var activeSkip: SkipMarker?
+    @Published private(set) var liveChannel: LiveChannel?
+    private var liveChannels = [LiveChannel]()
     private var skipMarkers = [SkipMarker]()
     private var extrasTasks = [Task<Void, Never>]()
     private var subtitleBridge: LocalHLSServer?
@@ -28,6 +31,7 @@ import AVKit
     private var endedObserver: NSObjectProtocol?
     private var tracking: PlaybackTracking?
     private let uhdAccess = UHDPlaybackAccess()
+    private var offlineBridge: LocalHLSServer?
     private let extrasAPI: PlaybackExtrasAPI
     private let sourceResolver: ((Programme, PlaybackQuality) async throws -> PlaybackSource)?
     init(sourceResolver: ((Programme, PlaybackQuality) async throws -> PlaybackSource)? = nil, extrasAPI: PlaybackExtrasAPI = PlaybackExtrasAPI()) { self.sourceResolver = sourceResolver; self.extrasAPI = extrasAPI }
@@ -38,11 +42,14 @@ import AVKit
         begin(programme: programme, tracking: context, title: programme.showTitle ?? programme.title, subtitle: programme.episodeSubtitle ?? "", minimumHeight: quality == .uhd ? 2160 : (quality == .hd && require1080 ? 1080 : 0), ready: ready) {
             if let sourceResolver = self.sourceResolver { return try await sourceResolver(programme, quality) }
             if quality == .automatic {
-                let canTryUHD = UHDIdentityVault.isConfigured || programme.uhdListed == true
-                return try await PlaybackPolicy.bestSource(uhd: canTryUHD ? {
-                    if UHDIdentityVault.isConfigured { return try await self.uhdAccess.source(for: programme) }
+                return try await PlaybackPolicy.bestSource(uhd: {
+                    if UHDIdentityVault.isConfigured {
+                        do { return try await self.uhdAccess.source(for: programme) }
+                        catch is CancellationError { throw CancellationError() }
+                        catch { try Task.checkCancellation() }
+                    }
                     return try await UHDService().source(for: programme)
-                } : nil, hd: { try await BBCService().source(for: programme, require1080: false) })
+                }, hd: { try await BBCService().source(for: programme, require1080: false) })
             }
             if quality == .uhd {
                 if UHDIdentityVault.isConfigured { return try await self.uhdAccess.source(for: programme) }
@@ -51,8 +58,27 @@ import AVKit
             return try await BBCService().source(for: programme, require1080: require1080)
         }
     }
-    func startLive(_ channel: LiveChannel, ready: @escaping () -> Void) {
+    func startLive(_ channel: LiveChannel, channels: [LiveChannel] = [], ready: @escaping () -> Void) {
         begin(title: channel.current?.title ?? channel.title, subtitle: channel.title + " • Live", minimumHeight: 0, ready: ready) { try await DiscoveryAPI().liveSource(channel) }
+        liveChannel = channel
+        liveChannels = channels
+    }
+    var canSwitchChannels: Bool { liveChannel != nil && liveChannels.count > 1 }
+    func changeChannel(by offset: Int) {
+        guard let channel = liveChannel, let index = liveChannels.firstIndex(where: { $0.id == channel.id }), canSwitchChannels else { return }
+        let list = liveChannels
+        let next = (index + offset % list.count + list.count) % list.count
+        startLive(list[next], channels: list) { }
+    }
+    func startDownloaded(_ download: OfflineDownload, folder: URL, ready: @escaping () -> Void) {
+        begin(title: download.programme.showTitle ?? download.programme.title, subtitle: "Downloaded • " + download.quality, minimumHeight: 0, ready: ready) {
+            let files = try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+            let resources = Dictionary(uniqueKeysWithValues: files.filter { $0.lastPathComponent != "download.json" }.map { ("/" + $0.lastPathComponent, $0) })
+            let bridge = LocalHLSServer(); self.offlineBridge = bridge
+            let url = try await bridge.start(playlists: [:], media: resources)
+            try Task.checkCancellation()
+            return PlaybackSource(url: url, requested1080: false, videoRange: download.videoRange)
+        }
     }
     static func metadata(title: String, subtitle: String) -> [AVMetadataItem] {
         func item(_ identifier: AVMetadataIdentifier, _ text: String) -> AVMetadataItem {
@@ -194,7 +220,7 @@ import AVKit
                                 position: player.currentTime().seconds, duration: item.duration.seconds, ended: ended)
     }
     func stop() {
-        checkpoint(); tracking = nil
+        checkpoint(); tracking = nil; liveChannel = nil; liveChannels = []
         extrasTasks.forEach { $0.cancel() }; extrasTasks = []
         if let clockObserver { player.removeTimeObserver(clockObserver) }; clockObserver = nil
         skipMarkers = []; activeSkip = nil
@@ -203,6 +229,7 @@ import AVKit
         generation = UUID(); operation?.cancel(); monitor?.cancel(); operation = nil; monitor = nil
         subtitleBridge?.stop(); subtitleBridge = nil
         uhdAccess.stop()
+        offlineBridge?.stop(); offlineBridge = nil
         player.pause(); player.replaceCurrentItem(with: nil); loading = false; qualityBadge = nil
     }
 }
@@ -212,6 +239,7 @@ struct NativePlayer: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let controller = AVPlayerViewController(); controller.player = model.player; controller.delegate = context.coordinator
         controller.showsPlaybackControls = true; controller.transportBarIncludesTitleView = true
+        context.coordinator.attach(to: controller, model: model)
         let label = context.coordinator.label
         label.text = model.qualityBadge; label.isHidden = model.qualityBadge == nil; label.translatesAutoresizingMaskIntoConstraints = false
         if let overlay = controller.contentOverlayView {
@@ -222,6 +250,7 @@ struct NativePlayer: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         let coordinator = context.coordinator
+        coordinator.refreshChannelHint()
         coordinator.label.text = model.qualityBadge; coordinator.label.isHidden = model.qualityBadge == nil
         if coordinator.marker != model.activeSkip {
             coordinator.marker = model.activeSkip
@@ -232,7 +261,56 @@ struct NativePlayer: UIViewControllerRepresentable {
         controller.transportBarCustomMenuItems = []
     }
 
-    @MainActor final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate {
+    @MainActor final class Coordinator: NSObject, @preconcurrency AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
+        weak var model: PlaybackModel?
+        private var controlsVisible = false
+        private var channelMode = false
+        private let channelHint = QualityBadgeLabel()
+        func attach(to controller: AVPlayerViewController, model: PlaybackModel) {
+            self.model = model
+            for type: UIPress.PressType in [.downArrow, .upArrow, .leftArrow, .rightArrow, .menu] {
+                let tap = ChannelRemoteGesture(target: self, action: #selector(remotePressed(_:)))
+                tap.allowedPressTypes = [NSNumber(value: type.rawValue)]
+                tap.allowedTouchTypes = []
+                tap.delegate = self
+                controller.view.addGestureRecognizer(tap)
+            }
+            channelHint.font = .systemFont(ofSize: 26, weight: .semibold)
+            channelHint.textColor = .white
+            channelHint.backgroundColor = UIColor.black.withAlphaComponent(0.85)
+            channelHint.layer.cornerRadius = 12
+            channelHint.clipsToBounds = true
+            channelHint.isHidden = true
+            channelHint.isUserInteractionEnabled = false
+            channelHint.translatesAutoresizingMaskIntoConstraints = false
+            controller.view.addSubview(channelHint)
+            NSLayoutConstraint.activate([
+                channelHint.centerXAnchor.constraint(equalTo: controller.view.centerXAnchor),
+                channelHint.bottomAnchor.constraint(equalTo: controller.view.bottomAnchor, constant: -55)
+            ])
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive press: UIPress) -> Bool {
+            guard model?.canSwitchChannels == true else { return false }
+            // Let AVKit handle the first Down and normal seeking/focus movement.
+            if press.type == .downArrow { return controlsVisible || channelMode }
+            return channelMode
+        }
+        @objc private func remotePressed(_ gesture: ChannelRemoteGesture) {
+            guard let value = gesture.allowedPressTypes.first, let type = UIPress.PressType(rawValue: value.intValue) else { return }
+            switch type {
+            case .downArrow: channelMode = true
+            case .rightArrow: model?.changeChannel(by: 1)
+            case .leftArrow: model?.changeChannel(by: -1)
+            case .upArrow, .menu: channelMode = false
+            default: break
+            }
+            refreshChannelHint()
+        }
+        func refreshChannelHint() {
+            if model?.canSwitchChannels != true { channelMode = false }
+            channelHint.isHidden = !channelMode
+            channelHint.text = "← Channel down     " + (model?.liveChannel?.title ?? "") + "     Channel up →   •   ↑ Controls"
+        }
         var marker: SkipMarker?
         let label: UILabel = {
             let label = QualityBadgeLabel(); label.font = .systemFont(ofSize: 24, weight: .bold)
@@ -244,6 +322,7 @@ struct NativePlayer: UIViewControllerRepresentable {
         }()
         @objc(playerViewController:willTransitionToVisibilityOfTransportBar:withAnimationCoordinator:)
         func playerViewController(_ playerViewController: AVPlayerViewController, willTransitionToVisibilityOfTransportBar visible: Bool, with coordinator: AVPlayerViewControllerAnimationCoordinator) {
+            controlsVisible = visible
             coordinator.addCoordinatedAnimations({ self.label.alpha = visible ? 1 : 0; playerViewController.contentOverlayView?.layoutIfNeeded() }, completion: nil)
         }
     }
@@ -274,4 +353,14 @@ private final class QualityBadgeLabel: UILabel {
         return CGSize(width: size.width + insets.left + insets.right, height: size.height + insets.top + insets.bottom)
     }
     override func drawText(in rect: CGRect) { super.drawText(in: rect.inset(by: insets)) }
+}
+
+/// Claim channel commands before AVKit's directional focus/seek recognizers.
+private final class ChannelRemoteGesture: UIGestureRecognizer {
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent) {
+        state = .recognized
+    }
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent) { }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent) { state = .cancelled }
+    override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 }

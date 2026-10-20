@@ -9,7 +9,7 @@ import Foundation
     init(secureSession: @escaping () throws -> BBCSecureSession = { try BBCSecureSession.configured() }, fetch: @escaping (URL) async throws -> Data = { try await BBCService().fetch($0) }) {
         secureFetch = secureSession; self.fetch = fetch
     }
-    private func manifest(for programme: Programme) async throws -> (manifest: DASHManifest, versionID: String) {
+    func manifest(for programme: Programme) async throws -> (manifest: DASHManifest, versionID: String) {
         let client = try secureFetch(); defer { client.invalidate() }
         let playlistURL = URL(string: "https://www.bbc.co.uk/programmes/\(try BBCService.pid(programme.id))/playlist.json")!
         let metadata = try await fetch(playlistURL)
